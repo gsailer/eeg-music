@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "eeg-music"
+version = "0.1.0"
+description = ""
+authors = ["Gabriel Sailer <gabriel.sailer@student.kit.edu>"]
+readme = "README.md"
+packages = [{include = "eeg_music"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "^2.2.2"
+numpy = "^1.26.4"
+seaborn = "^0.13.2"
+matplotlib = "^3.8.4"
+torch = "^2.3.0"
+jupyter-contrib-nbextensions = "^0.7.0"
+jupyterlab = "^4.2.0"
+mne = "^1.7.0"
+tqdm = "^4.66.4"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
