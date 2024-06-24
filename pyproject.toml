@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "eeg_music"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.11,<3.13,>=3.8"
 pandas = "^2.2.2"
 numpy = "^1.26.4"
 seaborn = "^0.13.2"
@@ -17,6 +17,9 @@ jupyter-contrib-nbextensions = "^0.7.0"
 jupyterlab = "^4.2.0"
 mne = "^1.7.0"
 tqdm = "^4.66.4"
+scikit-learn = "^1.4.2"
+pytz = "^2024.1"
+braindecode = "^0.8.1"
 
 
 [build-system]
