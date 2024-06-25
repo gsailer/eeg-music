@@ -1,5 +1,6 @@
 import os
 from typing import Tuple
+
 import numpy as np
 import pandas as pd
 
@@ -22,7 +23,9 @@ def parse_calibration_timestamps(raw_timestamps: str) -> pd.Series:
     return s
 
 
-def load_eeg(filename: str, sample_rate_hz=256) -> Tuple[np.int64, pd.DataFrame, pd.Timestamp]:
+def load_eeg(
+    filename: str, sample_rate_hz=256
+) -> Tuple[np.int64, pd.DataFrame, pd.Timestamp]:
     file = os.path.basename(filename).split(".")[0]
     assert file.startswith(
         "P"
