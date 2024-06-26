@@ -3,7 +3,7 @@
 
 .DS_Store
 data/
-
+models/checkpoints/
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
