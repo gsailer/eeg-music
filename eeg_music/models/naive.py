@@ -135,9 +135,9 @@ def calculate_metrics(labels, predictions):
 
 if __name__ == "__main__":
     device = "mps"
-    batch = 16
+    batch = 64
     epochs = 100
-    lr = 1e-3
+    lr = 1e-6
 
     model = EEGLikertConformer(batch_size=batch, learning_rate=lr).to(device)
     print(model)
