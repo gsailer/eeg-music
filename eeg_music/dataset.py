@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-BASE_PATH = "./data/processed"
+BASE_PATH = os.path.join(os.path.dirname(__file__), "data", "processed")
 
 
 class EEGMusicDataset(Dataset):
