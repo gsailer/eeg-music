@@ -25,6 +25,8 @@ class EEGLikertConformer(Module):
         self.batch_size = batch_size
         self.samples_per_window = samples_per_window
         self.learning_rate = learning_rate
+        
+        self.batchnorm = torch.nn.BatchNorm1d(n_eeg_channels)
 
         self.conv1 = torch.nn.Conv1d(
             in_channels=n_eeg_channels,
@@ -61,6 +63,7 @@ class EEGLikertConformer(Module):
         self.optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
 
     def forward(self, x):
+        x = self.batchnorm(x)
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = self.pool(x)
