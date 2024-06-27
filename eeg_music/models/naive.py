@@ -163,7 +163,9 @@ def trainer(
             l = model.train_step(eeg, labels)
             train_loss.append(l.item())
         print(sum(train_loss) / len(train_loss))
-
+    
+    os.makedirs("checkpoints", exist_ok=True)
+    
     torch.save(
         model.state_dict(),
         os.path.join(
