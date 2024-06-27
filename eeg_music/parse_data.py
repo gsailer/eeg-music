@@ -1,6 +1,6 @@
 import os
 import random
-from typing import Generator, Tuple
+from typing import Generator, List, Tuple
 
 import mne
 import numpy as np
@@ -19,11 +19,13 @@ BASE_PATH = os.path.join(
 )
 OTREE_PATH = os.path.join(BASE_PATH, "all_participants_otree.csv")
 EEG_PATH = os.path.join(BASE_PATH, "EEG")
-EVENT_OFFSET_SECONDS = 3
-MUSIC_DISCOVERY_DURATION_SECONDS = 20
+EVENT_OFFSET_SECONDS = 3  # Time to skip after the song starts
+MUSIC_DISCOVERY_DURATION_SECONDS = 20  # Time to include of the song recording
 TARGET = ["arousal", "pleasure"]
 WINDOW_SIZE_SECONDS = 2
 SAMPLE_RATE_HZ = 256
+CHANNEL_SETUP = ["F3", "Fz", "F4", "T3", "C3", "C4", "T4", "Pz"]
+EEG_MONTAGE = "standard_1020"
 
 # denoise output
 mne.set_log_level("ERROR")
@@ -95,7 +97,7 @@ def load_eeg_to_mne(path: str) -> Generator[Tuple[int, mne.io.RawArray], None, N
     for file in os.listdir(path):
         participant, eeg, recording_start_time = load_eeg(os.path.join(path, file))
         ch_names = [c for c in eeg.columns if "EEG" in c]
-        channel_names = ["F3", "Fz", "F4", "T3", "C3", "C4", "T4", "Pz"]
+        channel_names = CHANNEL_SETUP
 
         info = mne.create_info(
             ch_names=channel_names,
@@ -103,7 +105,7 @@ def load_eeg_to_mne(path: str) -> Generator[Tuple[int, mne.io.RawArray], None, N
             ch_types="eeg",
         )
         raw = mne.io.RawArray(eeg[ch_names].values.T, info)
-        raw.set_montage("standard_1020")
+        raw.set_montage(EEG_MONTAGE)
         # annotate events
         p = participant - 1  # 0-indexed
         participant_meta, intro, music_discovery, outro = load_otree_data(OTREE_PATH, p)
@@ -173,7 +175,7 @@ def write_base_dataset(
 
     # train test split based on participant
     dest = ""
-    # leave ~ 2 participants for test
+    # leave ~ 2 participants for test at 8 participants
     if random.random() < 0.25:
         dest = test_path
     else:
@@ -182,12 +184,52 @@ def write_base_dataset(
     np.save(os.path.join(dest, f"P{participant:.0f}_labels.npy"), labels)
 
 
+def _extract_track_windows(
+    eeg: np.ndarray, labels: np.ndarray, idx: List[int], epochs_per_track: int
+) -> Tuple[np.ndarray, np.ndarray]:
+    epochs_per_track = int(epochs_per_track)
+    windows = len(idx) * epochs_per_track
+    channels, samples = eeg.shape[1:]
+    eeg_windows = np.ndarray((windows, channels, samples))
+    labels_windows = np.ndarray((windows, len(TARGET)))
+
+    for i, orig_index in enumerate(idx):
+        eeg_windows[i * epochs_per_track : (i + 1) * epochs_per_track] = eeg[
+            orig_index * epochs_per_track : (orig_index + 1) * epochs_per_track
+        ]
+        labels_windows[i * epochs_per_track : (i + 1) * epochs_per_track] = labels[
+            orig_index * epochs_per_track : (orig_index + 1) * epochs_per_track
+        ]
+    return eeg_windows, labels_windows
+
+
+def _write_dataset_to_disk(raw_eeg, labels, participant, idx, epochs_per_track, path):
+    eeg, labels = _extract_track_windows(raw_eeg, labels, idx, epochs_per_track)
+    np.save(os.path.join(path, f"P{participant:.0f}_eeg.npy"), eeg)
+    np.save(os.path.join(path, f"P{participant:.0f}_labels.npy"), labels)
+
+
 def write_track_holdout_dataset(
-    participant: np.int64, eeg_epochs: mne.Epochs, labels: np.ndarray
+    participant: np.int64,
+    eeg_epochs: mne.Epochs,
+    labels: np.ndarray,
+    test_fraction=0.1,
 ) -> None:
     train_path, test_path = _ensure_directories(TrainTestSplitStrategy.Track)
+    raw_eeg = eeg_epochs.get_data()
 
-    pass
+    epochs_per_track = MUSIC_DISCOVERY_DURATION_SECONDS / WINDOW_SIZE_SECONDS
+    number_of_tracks = int(raw_eeg.shape[0] / epochs_per_track)
+
+    train_idx = [x for x in range(number_of_tracks) if random.random() > test_fraction]
+    test_idx = [x for x in range(number_of_tracks) if x not in train_idx]
+
+    _write_dataset_to_disk(
+        raw_eeg, labels, participant, train_idx, epochs_per_track, train_path
+    )
+    _write_dataset_to_disk(
+        raw_eeg, labels, participant, test_idx, epochs_per_track, test_path
+    )
 
 
 if __name__ == "__main__":
