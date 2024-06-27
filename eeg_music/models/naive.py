@@ -6,7 +6,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import torch
 from torch.nn import Module, functional as F
 from tqdm import tqdm
-from eeg_music.dataset import train_loader, test_loader
+from eeg_music.dataset import TrainTestSplitStrategy, train_loader, test_loader
 
 
 class EEGLikertConformer(Module):
@@ -142,31 +142,36 @@ def calculate_metrics(labels, predictions):
     return accuracy, precision, recall, f1
 
 
-def trainer():
-    device = "mps"
-    batch = 64
-    epochs = 100
-    lr = 1e-6
-
+def trainer(
+    split=TrainTestSplitStrategy.Participant,
+    device="mps",
+    batch=64,
+    epochs=100,
+    lr=1e-6,
+):
     model = EEGLikertConformer(batch_size=batch, learning_rate=lr).to(device)
     print(model)
-    data = train_loader(device, batch)
+    data = train_loader(
+        device,
+        batch,
+        split=split,
+    )
 
-    for epoch in tqdm(range(epochs)):
+    for _ in tqdm(range(epochs)):
         train_loss = []
         for eeg, labels in data:
             l = model.train_step(eeg, labels)
             train_loss.append(l.item())
         print(sum(train_loss) / len(train_loss))
-    model.eval()  # Set the model to evaluation mode
+
     torch.save(
         model.state_dict(),
         os.path.join(
-            "checkpoints"
-            f"{datetime.now().strftime('%Y-%m-%d_%H%M')}_{batch}_{lr}_naive_model.pth"
+            "checkpoints",
+            f"{datetime.now().strftime('%Y-%m-%d_%H%M')}_{split}_{batch}_{lr}_naive_model.pth",
         ),
     )
-    evaluate(model, device=device, batch=batch, lr=lr)
+    evaluate(model, device=device, batch=batch, split=split)
 
 
 def evaluate(
@@ -174,12 +179,28 @@ def evaluate(
     device="mps",
     batch=64,
     checkpoint="2024-06-26_1705_256_1e-06_10000_gcp_naive_model.pth",
+    split=TrainTestSplitStrategy.Participant,
 ):
+    """
+    Params
+    ------
+    model: EEGLikertConformer
+        The model to evaluate. If None, a new model is created and the checkpoint is loaded.
+        This requires checkpoint to be set.
+    device: str
+        The device to run the evaluation on.
+    batch: int
+        The batch size for evaluation.
+    checkpoint: str
+        The checkpoint to load. This is ignored if model is not None.
+    split: TrainTestSplitStrategy
+        The split strategy to use for evaluation.
+    """
     if model is None:
         model = EEGLikertConformer(batch_size=batch, device=device).to(device)
         model.load_checkpoint(os.path.join("checkpoints", checkpoint))
 
-    test_data = test_loader(device, batch)
+    test_data = test_loader(device, batch, split=split)
 
     eval_loss = []
     l1_loss = []
@@ -245,4 +266,11 @@ def evaluate(
 
 
 if __name__ == "__main__":
-    evaluate(device="cpu", batch=16)
+    # evaluate(device="cpu", batch=16)
+    trainer(
+        split=TrainTestSplitStrategy.Track,
+        batch=256,
+        epochs=10000,
+        lr=1e-6,
+        device="cuda",
+    )

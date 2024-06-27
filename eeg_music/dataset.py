@@ -22,6 +22,9 @@ class TrainTestSplitStrategy(Enum):
             raise ValueError("Invalid train_test_split_strategy")
         return split_dir
 
+    def __str__(self):
+        return self.name.lower()
+
 
 class EEGMusicDataset(Dataset):
     def __init__(
