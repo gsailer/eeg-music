@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Tuple
+from typing import Literal, Tuple
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import torch
@@ -19,13 +19,15 @@ class EEGLikertConformer(Module):
         num_layers: int = 2,  # Number of transformer encoder layers
         dropout: float = 0.1,
         learning_rate: float = 0.001,
+        device: Literal["cpu", "cuda", "mps"] = "cpu",
     ):
         super(EEGLikertConformer, self).__init__()
         self.n_eeg_channels = n_eeg_channels
         self.batch_size = batch_size
         self.samples_per_window = samples_per_window
         self.learning_rate = learning_rate
-        
+        self.device = device
+
         self.batchnorm = torch.nn.BatchNorm1d(n_eeg_channels)
 
         self.conv1 = torch.nn.Conv1d(
@@ -115,6 +117,9 @@ class EEGLikertConformer(Module):
         self.optimizer.step()
         return loss
 
+    def load_checkpoint(self, path):
+        self.load_state_dict(torch.load(path, map_location="cpu"))
+
     def predict(self, eeg):
         self.eval()  # Set the model to evaluation mode
         with torch.no_grad():
@@ -136,7 +141,7 @@ def calculate_metrics(labels, predictions):
     return accuracy, precision, recall, f1
 
 
-if __name__ == "__main__":
+def trainer():
     device = "mps"
     batch = 64
     epochs = 100
@@ -145,7 +150,6 @@ if __name__ == "__main__":
     model = EEGLikertConformer(batch_size=batch, learning_rate=lr).to(device)
     print(model)
     data = train_loader(device, batch)
-    test_data = test_loader(device, batch)
 
     for epoch in tqdm(range(epochs)):
         train_loss = []
@@ -158,8 +162,20 @@ if __name__ == "__main__":
         model.state_dict(),
         f"checkpoints/{datetime.now().strftime('%Y-%m-%d_%H%M')}_{batch}_{lr}_naive_model.pth",
     )
+    evaluate(model, device=device, batch=batch, lr=lr)
+
+
+def evaluate(model=None, device="mps", batch=64):
+    if model is None:
+        model = EEGLikertConformer(batch_size=batch, device=device).to(device)
+        model.load_checkpoint(
+            "checkpoints/2024-06-26_1705_256_1e-06_10000_gcp_naive_model.pth"
+        )
+
+    test_data = test_loader(device, batch)
 
     eval_loss = []
+    l1_loss = []
     all_labels = []
     all_predictions = []
 
@@ -176,11 +192,16 @@ if __name__ == "__main__":
             # Compute loss
             loss_arousal = model.loss(logits_arousal, labels_arousal)
             loss_pleasure = model.loss(logits_pleasure, labels_pleasure)
+            l1_loss.append(
+                F.l1_loss(logits, torch.stack([labels_arousal, labels_pleasure], 1))
+            )
             loss = loss_pleasure + loss_arousal
             eval_loss.append(loss.item())
 
             output = model.predict(eeg)
             predictions = output.cpu().numpy()
+            idx = torch.floor(torch.rand(1) * len(predictions)).int().item()
+            print(output[idx], labels[idx])
 
             labels_normalized = (
                 torch.stack(
@@ -212,4 +233,9 @@ if __name__ == "__main__":
                 f'{scale} - Accuracy: {values["Accuracy"]}, Precision: {values["Precision"]}, Recall: {values["Recall"]}, F1: {values["F1"]}'
             )
 
-    print(f"Average loss: {sum(eval_loss) / len(eval_loss)}")
+    print(f"Cross-Entropy loss: {sum(eval_loss) / len(eval_loss)}")
+    print(f"L1 loss: {sum(l1_loss) / len(l1_loss)}")
+
+
+if __name__ == "__main__":
+    evaluate(device="cpu", batch=16)

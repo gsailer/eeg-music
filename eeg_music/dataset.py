@@ -1,6 +1,6 @@
 import os
 from typing import Literal, Tuple
-
+from enum import Enum, auto
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -8,34 +8,50 @@ from torch.utils.data import Dataset
 BASE_PATH = os.path.join(os.path.dirname(__file__), "data", "processed")
 
 
+class TrainTestSplitStrategy(Enum):
+    Participant = auto()
+    Track = auto()
+
+
 class EEGMusicDataset(Dataset):
     def __init__(
         self,
         device: Literal["cpu", "cuda", "mps"] = "cpu",
         mode: Literal["train", "test"] = "train",
+        train_test_split_strategy: TrainTestSplitStrategy = TrainTestSplitStrategy.Participant,
     ):
         self.device = device
         self.dtype = torch.float32
-        self.eeg_data, self.labels = self._load_windows(mode)
+        self.eeg_data, self.labels = self._load_windows(mode, train_test_split_strategy)
 
     def _load_windows(
         self,
         mode: Literal["train", "test"],
+        train_test_split_strategy: TrainTestSplitStrategy,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         eeg = torch.tensor([], dtype=self.dtype).to(self.device)
         labels = torch.tensor([], dtype=self.dtype).to(self.device)
 
-        for file in sorted(os.listdir(f"{BASE_PATH}/{mode}")):
+        split = {
+            TrainTestSplitStrategy.Participant: "participant_holdout",
+            TrainTestSplitStrategy.Track: "track_holdout",
+        }.get(train_test_split_strategy)
+
+        if split is None:
+            raise ValueError("Invalid train_test_split_strategy")
+
+        path = f"{BASE_PATH}/{split}/{mode}"
+        for file in sorted(os.listdir(path)):
             if file.endswith("_eeg.npy"):
                 participant_eeg = (
-                    torch.from_numpy(np.load(f"{BASE_PATH}/{mode}/{file}"))
+                    torch.from_numpy(np.load(os.path.join(path, file)))
                     .to(self.dtype)
                     .to(self.device)
                 )
                 eeg = torch.cat((eeg, participant_eeg))
             elif file.endswith("_labels.npy"):
                 participant_labels = (
-                    torch.from_numpy(np.load(f"{BASE_PATH}/{mode}/{file}"))
+                    torch.from_numpy(np.load(os.path.join(path, file)))
                     .to(self.dtype)
                     .to(self.device)
                 )
@@ -49,12 +65,29 @@ class EEGMusicDataset(Dataset):
         return self.eeg_data[idx], self.labels[idx]
 
 
-train_loader = lambda device, batch_size: torch.utils.data.DataLoader(
-    EEGMusicDataset(device=device, mode="train"), batch_size=batch_size, shuffle=True
-)
-test_loader = lambda device, batch_size: torch.utils.data.DataLoader(
-    EEGMusicDataset(device=device, mode="test"), batch_size=batch_size, shuffle=False
-)
+def train_loader(
+    device,
+    batch_size,
+    split: TrainTestSplitStrategy = TrainTestSplitStrategy.Participant,
+):
+    return torch.utils.data.DataLoader(
+        EEGMusicDataset(device=device, mode="train", train_test_split_strategy=split),
+        batch_size=batch_size,
+        shuffle=True,
+    )
+
+
+def test_loader(
+    device,
+    batch_size,
+    split: TrainTestSplitStrategy = TrainTestSplitStrategy.Participant,
+):
+    return torch.utils.data.DataLoader(
+        EEGMusicDataset(device=device, mode="test", train_test_split_strategy=split),
+        batch_size=batch_size,
+        shuffle=False,
+    )
+
 
 if __name__ == "__main__":
     for eeg, labels in train_loader("cpu", 16):
