@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from typing import Literal, Tuple
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -160,17 +161,23 @@ def trainer():
     model.eval()  # Set the model to evaluation mode
     torch.save(
         model.state_dict(),
-        f"checkpoints/{datetime.now().strftime('%Y-%m-%d_%H%M')}_{batch}_{lr}_naive_model.pth",
+        os.path.join(
+            "checkpoints"
+            f"{datetime.now().strftime('%Y-%m-%d_%H%M')}_{batch}_{lr}_naive_model.pth"
+        ),
     )
     evaluate(model, device=device, batch=batch, lr=lr)
 
 
-def evaluate(model=None, device="mps", batch=64):
+def evaluate(
+    model=None,
+    device="mps",
+    batch=64,
+    checkpoint="2024-06-26_1705_256_1e-06_10000_gcp_naive_model.pth",
+):
     if model is None:
         model = EEGLikertConformer(batch_size=batch, device=device).to(device)
-        model.load_checkpoint(
-            "checkpoints/2024-06-26_1705_256_1e-06_10000_gcp_naive_model.pth"
-        )
+        model.load_checkpoint(os.path.join("checkpoints", checkpoint))
 
     test_data = test_loader(device, batch)
 

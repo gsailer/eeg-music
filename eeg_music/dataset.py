@@ -12,6 +12,16 @@ class TrainTestSplitStrategy(Enum):
     Participant = auto()
     Track = auto()
 
+    def to_directory(self) -> str:
+        split_dir = {
+            TrainTestSplitStrategy.Participant: "participant_holdout",
+            TrainTestSplitStrategy.Track: "track_holdout",
+        }.get(self)
+
+        if split_dir is None:
+            raise ValueError("Invalid train_test_split_strategy")
+        return split_dir
+
 
 class EEGMusicDataset(Dataset):
     def __init__(
@@ -32,15 +42,7 @@ class EEGMusicDataset(Dataset):
         eeg = torch.tensor([], dtype=self.dtype).to(self.device)
         labels = torch.tensor([], dtype=self.dtype).to(self.device)
 
-        split = {
-            TrainTestSplitStrategy.Participant: "participant_holdout",
-            TrainTestSplitStrategy.Track: "track_holdout",
-        }.get(train_test_split_strategy)
-
-        if split is None:
-            raise ValueError("Invalid train_test_split_strategy")
-
-        path = f"{BASE_PATH}/{split}/{mode}"
+        path = os.path.join(BASE_PATH, train_test_split_strategy.to_directory(), mode)
         for file in sorted(os.listdir(path)):
             if file.endswith("_eeg.npy"):
                 participant_eeg = (

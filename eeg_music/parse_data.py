@@ -7,9 +7,16 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from eeg_music.dataset import TrainTestSplitStrategy
 from eeg_music.utils import load_eeg
 
-BASE_PATH = "./data/raw/02_EYODF Pilot Data/Pilot (Same Songs)"
+BASE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "data",
+    "raw",
+    "02_EYODF Pilot Data",
+    "Pilot (Same Songs)",
+)
 OTREE_PATH = os.path.join(BASE_PATH, "all_participants_otree.csv")
 EEG_PATH = os.path.join(BASE_PATH, "EEG")
 EVENT_OFFSET_SECONDS = 3
@@ -148,25 +155,42 @@ def load_eeg_to_mne(path: str) -> Generator[Tuple[int, mne.io.RawArray], None, N
         yield eeg.iloc[0].participant, all_sub_epochs, sub_epoch_labels
 
 
+def _ensure_directories(split: TrainTestSplitStrategy) -> Tuple[str, str]:
+    base = os.path.join(os.path.dirname(__file__), "data", "processed")
+    train_path = os.path.join(base, split.to_directory(), "train")
+    test_path = os.path.join(base, split.to_directory(), "test")
+    os.makedirs(train_path, exist_ok=True)
+    os.makedirs(test_path, exist_ok=True)
+    return train_path, test_path
+
+
 def write_base_dataset(
     participant: np.int64,
     eeg_epochs: mne.Epochs,
     labels: np.ndarray,
-):
-    os.makedirs("data/processed/train", exist_ok=True)
-    os.makedirs("data/processed/test", exist_ok=True)
+) -> None:
+    train_path, test_path = _ensure_directories(TrainTestSplitStrategy.Participant)
+
     # train test split based on participant
-    mode = ""
-    # leave ~ two participants for test
+    dest = ""
+    # leave ~ 2 participants for test
     if random.random() < 0.25:
-        mode = "test"
+        dest = test_path
     else:
-        mode = "train"
-    np.save(f"data/processed/{mode}/P{participant:.0f}_eeg.npy", eeg_epochs.get_data())
-    np.save(f"data/processed/{mode}/P{participant:.0f}_labels.npy", labels)
+        dest = train_path
+    np.save(os.path.join(dest, f"P{participant:.0f}_eeg.npy"), eeg_epochs.get_data())
+    np.save(os.path.join(dest, f"P{participant:.0f}_labels.npy"), labels)
+
+
+def write_track_holdout_dataset(
+    participant: np.int64, eeg_epochs: mne.Epochs, labels: np.ndarray
+) -> None:
+    train_path, test_path = _ensure_directories(TrainTestSplitStrategy.Track)
+
+    pass
 
 
 if __name__ == "__main__":
     eeg_files = os.listdir(EEG_PATH)
     for p, eeg_epochs, labels in tqdm(load_eeg_to_mne(EEG_PATH), total=len(eeg_files)):
-        write_base_dataset(p, eeg_epochs, labels)
+        write_track_holdout_dataset(p, eeg_epochs, labels)
