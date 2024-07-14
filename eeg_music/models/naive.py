@@ -1,8 +1,15 @@
 from datetime import datetime
 import os
-from typing import Literal, Tuple
+from typing import List, Literal, Tuple
 import numpy as np
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    precision_score,
+    recall_score,
+    f1_score,
+    ConfusionMatrixDisplay,
+)
 import torch
 from torch.nn import Module, functional as F
 from tqdm import tqdm
@@ -47,7 +54,6 @@ class EEGLikertConformer(Module):
         )
         self.pool = torch.nn.MaxPool1d(kernel_size=2, stride=2, padding=0)
 
-        # Define the transformer encoder layer
         self.encoder_layer = torch.nn.TransformerEncoderLayer(
             d_model=32, nhead=nhead, dropout=dropout
         )
@@ -71,15 +77,14 @@ class EEGLikertConformer(Module):
         x = F.relu(self.conv2(x))
         x = self.pool(x)
 
-        x = x.permute(2, 0, 1)  # Reshape for transformer input
+        x = x.permute(2, 0, 1)
 
         encoded = self.transformer_encoder(x)
         encoded = encoded.permute(
             1, 0, 2
         )  # Reshape back to (batch_size, seq_len, feature_dim)
-        encoded = encoded.contiguous().view(encoded.size(0), -1)  # Flatten the tensor
+        encoded = encoded.contiguous().view(encoded.size(0), -1)
 
-        # Fully connected layers
         encoded = F.relu(self.fc1(encoded))
         encoded = self.dropout(encoded)
         output = self.fc2(encoded)
@@ -134,12 +139,16 @@ class EEGLikertConformer(Module):
 
 
 def calculate_metrics(labels, predictions):
+    print(labels[:10])
+    print("---")
+    print(predictions[:10])
     accuracy = accuracy_score(labels, predictions)
     precision = precision_score(labels, predictions, average="weighted")
     recall = recall_score(labels, predictions, average="weighted")
     f1 = f1_score(labels, predictions, average="weighted")
+    confusion = confusion_matrix(labels, predictions)
 
-    return accuracy, precision, recall, f1
+    return accuracy, precision, recall, f1, confusion
 
 
 def trainer(
@@ -148,8 +157,11 @@ def trainer(
     batch=64,
     epochs=100,
     lr=1e-6,
+    dropout=0.1,
 ):
-    model = EEGLikertConformer(batch_size=batch, learning_rate=lr).to(device)
+    model = EEGLikertConformer(batch_size=batch, learning_rate=lr, dropout=dropout).to(
+        device
+    )
     print(model)
     data = train_loader(
         device,
@@ -163,9 +175,9 @@ def trainer(
             l = model.train_step(eeg, labels)
             train_loss.append(l.item())
         print(sum(train_loss) / len(train_loss))
-    
+
     os.makedirs("checkpoints", exist_ok=True)
-    
+
     torch.save(
         model.state_dict(),
         os.path.join(
@@ -174,6 +186,34 @@ def trainer(
         ),
     )
     evaluate(model, device=device, batch=batch, split=split)
+
+
+def evaluation_plots(loss: List, metrics: dict, model_checkpoint: str, split: str):
+    # scoped plotting dependencies
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    time = datetime.now().strftime("%Y-%m-%d_%H%M")
+    os.makedirs("plots", exist_ok=True)
+
+    with PdfPages(f"plots/{time}{model_checkpoint}-{split}.pdf") as pdf:
+        # plot confusion matrix
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        for i, scale in enumerate(["Pleasure", "Arousal"]):
+            disp = ConfusionMatrixDisplay(metrics[scale]["Confusion"])
+            disp.plot(ax=ax[i])
+            ax[i].set_title(f"{scale} Confusion Matrix")
+        pdf.savefig(fig)
+        plt.savefig(f"plots/{time}{model_checkpoint}-{split}-confusion.png")
+        plt.close(fig)
+
+        # plot loss histogram
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        sns.histplot(loss, ax=ax)
+        ax.set_title("Loss Evaluation Distribution")
+        pdf.savefig(fig)
+        plt.close(fig)
 
 
 def evaluate(
@@ -230,8 +270,6 @@ def evaluate(
 
             output = model.predict(eeg)
             predictions = output.cpu().numpy()
-            idx = torch.floor(torch.rand(1) * len(predictions)).int().item()
-            print(output[idx], labels[idx])
 
             labels_normalized = (
                 torch.stack(
@@ -250,29 +288,58 @@ def evaluate(
         metrics = {"Pleasure": {}, "Arousal": {}}
 
         for i, scale in enumerate(["Pleasure", "Arousal"]):
-            accuracy, precision, recall, f1 = calculate_metrics(
+            accuracy, precision, recall, f1, confusion = calculate_metrics(
                 all_labels[:, i], all_predictions[:, i]
             )
             metrics[scale]["Accuracy"] = accuracy
             metrics[scale]["Precision"] = precision
             metrics[scale]["Recall"] = recall
             metrics[scale]["F1"] = f1
+            metrics[scale]["Confusion"] = confusion
 
         for scale, values in metrics.items():
             print(
                 f'{scale} - Accuracy: {values["Accuracy"]}, Precision: {values["Precision"]}, Recall: {values["Recall"]}, F1: {values["F1"]}'
             )
+            print(values["Confusion"])
+
+        evaluation_plots(eval_loss, metrics, checkpoint, split)
 
     print(f"Cross-Entropy loss: {sum(eval_loss) / len(eval_loss)}")
     print(f"L1 loss: {sum(l1_loss) / len(l1_loss)}")
 
 
 if __name__ == "__main__":
-    # evaluate(device="cpu", batch=16)
-    trainer(
+    # trainer(
+    #     split=TrainTestSplitStrategy.Track,
+    #     batch=256,
+    #     epochs=10000,
+    #     lr=1e-6,
+    #     device="cuda",
+    # )
+    # evaluate(
+    #     device="mps",
+    #     batch=16,
+    #     checkpoint="2024-06-26_1705_256_1e-06_10000_gcp_naive_model.pth",
+    #     split=TrainTestSplitStrategy.Participant,
+    # )
+    evaluate(
+        device="mps",
+        batch=16,
+        checkpoint="2024-06-27_2202_track_256_1e-06_10000_gcp_naive_model.pth",
         split=TrainTestSplitStrategy.Track,
-        batch=256,
-        epochs=10000,
-        lr=1e-6,
-        device="cuda",
     )
+    evaluate(
+        device="mps",
+        batch=16,
+        checkpoint="2024-06-26_1705_participant_256_1e-06_10000_gcp_naive_model.pth",
+        split=TrainTestSplitStrategy.Participant,
+    )
+    # trainer(
+    #     device="mps",
+    #     batch=256,
+    #     epochs=15,
+    #     lr=1e-6,
+    #     split=TrainTestSplitStrategy.Participant,
+    #     dropout=0.25,
+    # )
