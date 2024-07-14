@@ -76,9 +76,19 @@ def load_otree_data(path: str, participant: int) -> Tuple[pd.DataFrame]:
     )
 
 
-def preprocess_eeg(eeg: mne.io.RawArray) -> mne.io.RawArray:
+def preprocess_eeg(eeg: mne.io.RawArray, normalize: bool = False) -> mne.io.RawArray:
     eeg.filter(l_freq=0.5, h_freq=60.0)
     eeg.notch_filter(freqs=50.0)
+
+    if normalize:
+        annot = eeg.annotations
+
+        data = eeg.get_data()
+        mean = np.mean(data, axis=1, keepdims=True)
+        std = np.std(data, axis=1, keepdims=True)
+        z_scored_data = (data - mean) / std
+        eeg = mne.io.RawArray(z_scored_data, eeg.info)
+        eeg.set_annotations(annot)  # restore annotations
     return eeg
 
 
@@ -93,7 +103,9 @@ def extract_labels(
     return labels
 
 
-def load_eeg_to_mne(path: str) -> Generator[Tuple[int, mne.io.RawArray], None, None]:
+def load_eeg_to_mne(
+    path: str, normalize_eeg: bool = False
+) -> Generator[Tuple[int, mne.io.RawArray], None, None]:
     for file in os.listdir(path):
         participant, eeg, recording_start_time = load_eeg(os.path.join(path, file))
         ch_names = [c for c in eeg.columns if "EEG" in c]
@@ -119,7 +131,7 @@ def load_eeg_to_mne(path: str) -> Generator[Tuple[int, mne.io.RawArray], None, N
                 description=music_discovery.current_song.values,
             )
         )
-        raw = preprocess_eeg(raw)
+        raw = preprocess_eeg(raw, normalize=normalize_eeg)
         # create epochs from annotations
         epochs = mne.Epochs(
             raw=raw,
@@ -157,10 +169,13 @@ def load_eeg_to_mne(path: str) -> Generator[Tuple[int, mne.io.RawArray], None, N
         yield eeg.iloc[0].participant, all_sub_epochs, sub_epoch_labels
 
 
-def _ensure_directories(split: TrainTestSplitStrategy) -> Tuple[str, str]:
+def _ensure_directories(
+    split: TrainTestSplitStrategy, normalized=False
+) -> Tuple[str, str]:
     base = os.path.join(os.path.dirname(__file__), "data", "processed")
-    train_path = os.path.join(base, split.to_directory(), "train")
-    test_path = os.path.join(base, split.to_directory(), "test")
+    norm_path_part = "normalized" if normalized else "raw"
+    train_path = os.path.join(base, split.to_directory(), norm_path_part, "train")
+    test_path = os.path.join(base, split.to_directory(), norm_path_part, "test")
     os.makedirs(train_path, exist_ok=True)
     os.makedirs(test_path, exist_ok=True)
     return train_path, test_path
@@ -214,8 +229,11 @@ def write_track_holdout_dataset(
     eeg_epochs: mne.Epochs,
     labels: np.ndarray,
     test_fraction=0.1,
+    normalize_eeg=False,
 ) -> None:
-    train_path, test_path = _ensure_directories(TrainTestSplitStrategy.Track)
+    train_path, test_path = _ensure_directories(
+        TrainTestSplitStrategy.Track, normalized=normalize_eeg
+    )
     raw_eeg = eeg_epochs.get_data()
 
     epochs_per_track = MUSIC_DISCOVERY_DURATION_SECONDS / WINDOW_SIZE_SECONDS
@@ -234,5 +252,11 @@ def write_track_holdout_dataset(
 
 if __name__ == "__main__":
     eeg_files = os.listdir(EEG_PATH)
-    for p, eeg_epochs, labels in tqdm(load_eeg_to_mne(EEG_PATH), total=len(eeg_files)):
-        write_track_holdout_dataset(p, eeg_epochs, labels)
+    norm = True
+
+    # TODO: write metadata csvs (track mapping)
+
+    for p, eeg_epochs, labels in tqdm(
+        load_eeg_to_mne(EEG_PATH, normalize_eeg=norm), total=len(eeg_files)
+    ):
+        write_track_holdout_dataset(p, eeg_epochs, labels, normalize_eeg=norm)

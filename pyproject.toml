@@ -20,6 +20,8 @@ tqdm = "^4.66.4"
 scikit-learn = "^1.4.2"
 pytz = "^2024.1"
 braindecode = "^0.8.1"
+lightning = {extras = ["extra"], version = "^2.3.3"}
+bitsandbytes = "0.42.0"
 
 
 [build-system]

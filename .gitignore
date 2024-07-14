@@ -4,6 +4,9 @@
 .DS_Store
 data/
 eeg_music/models/checkpoints/
+eeg_music/models/plots/
+lightning_logs/
+
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/

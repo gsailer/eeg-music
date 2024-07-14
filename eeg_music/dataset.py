@@ -11,11 +11,14 @@ BASE_PATH = os.path.join(os.path.dirname(__file__), "data", "processed")
 class TrainTestSplitStrategy(Enum):
     Participant = auto()
     Track = auto()
+    # TODO: check if strat over track introduces strong bias to certain tracks
+    StratifiedTrack = auto()  # not implemented
 
     def to_directory(self) -> str:
         split_dir = {
             TrainTestSplitStrategy.Participant: "participant_holdout",
             TrainTestSplitStrategy.Track: "track_holdout",
+            TrainTestSplitStrategy.StratifiedTrack: "stratified_track_holdout",
         }.get(self)
 
         if split_dir is None:
@@ -32,20 +35,27 @@ class EEGMusicDataset(Dataset):
         device: Literal["cpu", "cuda", "mps"] = "cpu",
         mode: Literal["train", "test"] = "train",
         train_test_split_strategy: TrainTestSplitStrategy = TrainTestSplitStrategy.Participant,
+        normalize: bool = False,
     ):
         self.device = device
         self.dtype = torch.float32
-        self.eeg_data, self.labels = self._load_windows(mode, train_test_split_strategy)
+        self.eeg_data, self.labels = self._load_windows(
+            mode, train_test_split_strategy, normalize
+        )
 
     def _load_windows(
         self,
         mode: Literal["train", "test"],
         train_test_split_strategy: TrainTestSplitStrategy,
+        normalize: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         eeg = torch.tensor([], dtype=self.dtype).to(self.device)
         labels = torch.tensor([], dtype=self.dtype).to(self.device)
 
-        path = os.path.join(BASE_PATH, train_test_split_strategy.to_directory(), mode)
+        norm_path_part = "normalized" if normalize else "raw"
+        path = os.path.join(
+            BASE_PATH, train_test_split_strategy.to_directory(), norm_path_part, mode
+        )
         for file in sorted(os.listdir(path)):
             if file.endswith("_eeg.npy"):
                 participant_eeg = (
@@ -74,9 +84,15 @@ def train_loader(
     device,
     batch_size,
     split: TrainTestSplitStrategy = TrainTestSplitStrategy.Participant,
-):
+    normalize: bool = False,
+) -> torch.utils.data.DataLoader:
     return torch.utils.data.DataLoader(
-        EEGMusicDataset(device=device, mode="train", train_test_split_strategy=split),
+        EEGMusicDataset(
+            device=device,
+            mode="train",
+            train_test_split_strategy=split,
+            normalize=normalize,
+        ),
         batch_size=batch_size,
         shuffle=True,
     )
@@ -86,9 +102,15 @@ def test_loader(
     device,
     batch_size,
     split: TrainTestSplitStrategy = TrainTestSplitStrategy.Participant,
+    normalize: bool = False,
 ):
     return torch.utils.data.DataLoader(
-        EEGMusicDataset(device=device, mode="test", train_test_split_strategy=split),
+        EEGMusicDataset(
+            device=device,
+            mode="test",
+            train_test_split_strategy=split,
+            normalize=normalize,
+        ),
         batch_size=batch_size,
         shuffle=False,
     )
