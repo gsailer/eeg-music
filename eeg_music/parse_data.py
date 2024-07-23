@@ -93,7 +93,9 @@ def preprocess_eeg(eeg: mne.io.RawArray, normalize: bool = False) -> mne.io.RawA
 
 
 def extract_labels(
-    music_discovery: pd.DataFrame, events: np.ndarray, event_id: dict
+    music_discovery: pd.DataFrame,
+    events: np.ndarray,
+    event_id: dict,
 ) -> np.ndarray:
     labels = np.zeros((events.shape[0], len(TARGET)))
     event_id = {v: k for k, v in event_id.items()}
