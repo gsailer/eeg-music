@@ -78,6 +78,7 @@ def load_otree_data(path: str, participant: int) -> Tuple[pd.DataFrame]:
 
 def preprocess_eeg(eeg: mne.io.RawArray, normalize: bool = False) -> mne.io.RawArray:
     eeg.filter(l_freq=0.5, h_freq=60.0)
+    # filter out powerline interference - power frequency in germany (50Hz)
     eeg.notch_filter(freqs=50.0)
 
     if normalize:
@@ -178,25 +179,45 @@ def _ensure_directories(
     norm_path_part = "normalized" if normalized else "raw"
     train_path = os.path.join(base, split.to_directory(), norm_path_part, "train")
     test_path = os.path.join(base, split.to_directory(), norm_path_part, "test")
+    val_path = os.path.join(base, split.to_directory(), norm_path_part, "val")
     os.makedirs(train_path, exist_ok=True)
     os.makedirs(test_path, exist_ok=True)
-    return train_path, test_path
+    os.makedirs(val_path, exist_ok=True)
+    return train_path, test_path, val_path
 
 
 def write_base_dataset(
     participant: np.int64,
     eeg_epochs: mne.Epochs,
     labels: np.ndarray,
+    norm: bool = False,
+    assigned_split: dict | None = None,
 ) -> None:
-    train_path, test_path = _ensure_directories(TrainTestSplitStrategy.Participant)
+    train_path, test_path, val_path = _ensure_directories(
+        TrainTestSplitStrategy.Participant, normalized=norm
+    )
+
+    dir_map = {
+        "train": train_path,
+        "test": test_path,
+        "val": val_path,
+    }
 
     # train test split based on participant
-    dest = ""
+    mode = None
     # leave ~ 2 participants for test at 8 participants
     if random.random() < 0.25:
-        dest = test_path
+        if random.random() <= 0.5:
+            mode = "val"
+        else:
+            mode = "test"
     else:
-        dest = train_path
+        mode = "train"
+
+    if assigned_split:
+        mode = assigned_split[participant]
+
+    dest = dir_map[mode]
     np.save(os.path.join(dest, f"P{participant:.0f}_eeg.npy"), eeg_epochs.get_data())
     np.save(os.path.join(dest, f"P{participant:.0f}_labels.npy"), labels)
 
@@ -230,10 +251,10 @@ def write_track_holdout_dataset(
     participant: np.int64,
     eeg_epochs: mne.Epochs,
     labels: np.ndarray,
-    test_fraction=0.1,
+    test_fraction=0.2,
     normalize_eeg=False,
 ) -> None:
-    train_path, test_path = _ensure_directories(
+    train_path, test_path, val_path = _ensure_directories(
         TrainTestSplitStrategy.Track, normalized=normalize_eeg
     )
     raw_eeg = eeg_epochs.get_data()
@@ -243,22 +264,51 @@ def write_track_holdout_dataset(
 
     train_idx = [x for x in range(number_of_tracks) if random.random() > test_fraction]
     test_idx = [x for x in range(number_of_tracks) if x not in train_idx]
+    val_idx = [x for x in range(len(test_idx)) if random.random() > 0.5]
+    test_idx = list(filter(lambda x: not x in val_idx, test_idx))
 
-    _write_dataset_to_disk(
-        raw_eeg, labels, participant, train_idx, epochs_per_track, train_path
-    )
-    _write_dataset_to_disk(
-        raw_eeg, labels, participant, test_idx, epochs_per_track, test_path
-    )
+    for idx, path in zip(
+        [train_idx, test_idx, val_idx], [train_path, test_path, val_path]
+    ):
+        _write_dataset_to_disk(
+            raw_eeg, labels, participant, idx, epochs_per_track, path
+        )
+
+
+def get_split_assignment(dir):
+    """only works for the participant split"""
+    assignment = {}
+    for dataset in ["train", "test", "val"]:
+        for file in os.listdir(os.path.join(dir, dataset)):
+            participant = int(file.split("_")[0][1:])
+            assignment[participant] = dataset
+    return assignment
+
+
+def dataset_exists(split: TrainTestSplitStrategy, normalized=False) -> Tuple[bool, str]:
+    base = os.path.join(os.path.dirname(__file__), "data", "processed")
+    norm_path_part = "normalized" if normalized else "raw"
+    path = os.path.join(base, split.to_directory(), norm_path_part)
+    return os.path.exists(path), path
 
 
 if __name__ == "__main__":
     eeg_files = os.listdir(EEG_PATH)
-    norm = True
+    random.seed(1337)
 
-    # TODO: write metadata csvs (track mapping)
+    for norm in [True, False]:
+        for p, eeg_epochs, labels in tqdm(
+            load_eeg_to_mne(EEG_PATH, normalize_eeg=norm), total=len(eeg_files)
+        ):
+            write_track_holdout_dataset(p, eeg_epochs, labels, normalize_eeg=norm)
 
-    for p, eeg_epochs, labels in tqdm(
-        load_eeg_to_mne(EEG_PATH, normalize_eeg=norm), total=len(eeg_files)
-    ):
-        write_track_holdout_dataset(p, eeg_epochs, labels, normalize_eeg=norm)
+            assignment = None
+            ds_exists, path = dataset_exists(
+                TrainTestSplitStrategy.Participant, normalized=not norm
+            )
+            if ds_exists:
+                assignment = get_split_assignment(path)
+
+            write_base_dataset(
+                p, eeg_epochs, labels, norm=norm, assigned_split=assignment
+            )

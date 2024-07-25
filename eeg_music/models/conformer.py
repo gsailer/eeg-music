@@ -51,10 +51,13 @@ if __name__ == "__main__":
         use_three_class_problem=True,
     ).to(device)
     train_set = train_loader(
-        device, batch_size=256, split=TrainTestSplitStrategy.Track, normalize=False
+        device,
+        batch_size=256,
+        split=TrainTestSplitStrategy.Participant,
+        normalize=False,
     )
     test_set = test_loader(
-        device, batch_size=8, split=TrainTestSplitStrategy.Track, normalize=False
+        device, batch_size=8, split=TrainTestSplitStrategy.Participant, normalize=False
     )
 
     trainer = L.Trainer(accelerator=device, max_epochs=300, log_every_n_steps=10)

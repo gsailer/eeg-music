@@ -117,6 +117,7 @@ def loader(
     normalize: bool = False,
     load_participant_ids: bool = False,
     mode: Literal["train", "test", "val"] = "train",
+    num_workers: int = 0,
 ) -> torch.utils.data.DataLoader:
     return torch.utils.data.DataLoader(
         EEGMusicDataset(
