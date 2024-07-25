@@ -6,6 +6,7 @@ data/
 eeg_music/models/checkpoints/
 eeg_music/models/plots/
 lightning_logs/
+plots/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
