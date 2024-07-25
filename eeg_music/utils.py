@@ -24,7 +24,7 @@ def parse_calibration_timestamps(raw_timestamps: str) -> pd.Series:
 
 
 def load_eeg(
-    filename: str, sample_rate_hz=256
+    filename: str, sample_rate_hz=256, timezone="Europe/Berlin"
 ) -> Tuple[np.int64, pd.DataFrame, pd.Timestamp]:
     file = os.path.basename(filename).split(".")[0]
     assert file.startswith(
@@ -33,7 +33,7 @@ def load_eeg(
     participant = np.int64(file.split("_")[0][1:])  # remove the p from p1
     time = "".join(file.split("_")[2:])
     recording_start = pd.to_datetime(time, format="%Y%m%d%H%M%S")
-    recording_start = recording_start.tz_localize("Europe/Berlin")
+    recording_start = recording_start.tz_localize(timezone)
     recording_start = recording_start.tz_convert("UTC")
     recording_start = recording_start.tz_localize(None)
 
