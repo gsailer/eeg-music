@@ -197,12 +197,12 @@ if __name__ == "__main__":
     # plot for class comparison
     normalize = True
 
-    for cls in ["likert", "three"]:
+    for model in ["eegnet", "conformer"]:
         for plot in plots:
             plot_df = scalars.loc[
                 (scalars.strategy == "participant")
                 & (scalars.normalize == "norm")
-                & (scalars.classes == cls)
+                & (scalars.model == model)
                 & (scalars.metric == plot)
             ]
 
@@ -212,14 +212,14 @@ if __name__ == "__main__":
                 data=plot_df,
                 x="step",
                 y="smoothed_value",
-                hue="model",
-                style="model",
+                hue="classes",
+                style="classes",
                 markers=True,
                 dashes=False,
                 errorbar=None,
             )
-            plt.legend(title="Model")
+            plt.legend(title="Target Formulation")
             plt.xlabel("Step")
             plt.ylabel("Value")
             plt.tight_layout()
-            plt.savefig(f"plots/participant_{cls}_{plot}.png")
+            plt.savefig(f"plots/participant_{model}_{plot}_classes.png")
