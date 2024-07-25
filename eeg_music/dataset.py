@@ -11,14 +11,11 @@ BASE_PATH = os.path.join(os.path.dirname(__file__), "data", "processed")
 class TrainTestSplitStrategy(Enum):
     Participant = auto()
     Track = auto()
-    # TODO: check if strat over track introduces strong bias to certain tracks
-    StratifiedTrack = auto()  # not implemented
 
     def to_directory(self) -> str:
         split_dir = {
             TrainTestSplitStrategy.Participant: "participant_holdout",
             TrainTestSplitStrategy.Track: "track_holdout",
-            TrainTestSplitStrategy.StratifiedTrack: "stratified_track_holdout",
         }.get(self)
 
         if split_dir is None:
