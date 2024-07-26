@@ -31,7 +31,8 @@ The filename structure expects the following format: `P{participant_number}_{par
 
 ## Preprocessing
 
-EEG channel data is split into 2-second windows without overlap. The data is then normalized and transformed into a 2D matrix. The matrix is then split into 3D tensors of shape (n_windows, n_channels, n_samples).
+EEG channel data is split into 2-second windows without overlap. The data is then normalized and joined with labels from a questionnaire. The data is then split into training and validation and test sets.
+This results in input shapes of (batch_size, eeg_channels, time_steps) and label shapes of (batch_size, 2).
 
 ## Emotion Recognition
 
